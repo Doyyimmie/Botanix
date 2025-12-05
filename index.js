@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, Collection } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, REST, Routes } = require('discord.js');
 const fs = require('fs');
 const mongoose = require('mongoose');
 
@@ -12,10 +12,7 @@ client.prefixCommands = new Collection();
 client.slashCommands = new Collection();
 
 // MongoDB connection
-mongoose.connect(process.env.MONGO_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-}).then(() => console.log('MongoDB connected')).catch(console.error);
+require('./utils/mongo');
 
 // Load events
 const eventFiles = fs.readdirSync('./events').filter(file => file.endsWith('.js'));
@@ -41,5 +38,20 @@ for (const file of slashCommandFiles) {
   const command = require(`./commands/slash/${file}`);
   client.slashCommands.set(command.data.name, command);
 }
+
+// Register slash commands globally
+const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
+(async () => {
+  try {
+    console.log('Started refreshing slash commands.');
+    await rest.put(
+      Routes.applicationCommands(client.user?.id || process.env.CLIENT_ID),
+      { body: slashData }
+    );
+    console.log('Sucessfully reloaded slash commands.');
+  } catch (error) {
+    console.error(error);
+  } 
+})();
 
 client.login(process.env.TOKEN);
