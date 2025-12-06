@@ -7,13 +7,24 @@ module.exports = {
     .setDescription('Configure welcome messages')
     .addSubcommand(sc => sc.setName('setchannel')
       .setDescription('Set channel for welcome messages')
-      .addChannelOption(o => o.setName('channel').setRequired(true)))
+      .addChannelOption(o =>
+        o.setName('channel')
+          .setDescription('Channel where welcome messages will be sent')
+          .setRequired(true)
+      ))
     .addSubcommand(sc => sc.setName('setmessage')
       .setDescription('Set welcome message (use {user} and {guild})')
-      .addStringOption(o => o.setName('message').setRequired(true)))
-    .addSubcommand(sc => sc.setName('enable').setDescription('Enable welcome messages'))
-    .addSubcommand(sc => sc.setName('disable').setDescription('Disable welcome messages'))
+      .addStringOption(o =>
+        o.setName('message')
+          .setDescription('The welcome message that will be sent')
+          .setRequired(true)
+      ))
+    .addSubcommand(sc => sc.setName('enable')
+      .setDescription('Enable welcome messages'))
+    .addSubcommand(sc => sc.setName('disable')
+      .setDescription('Disable welcome messages'))
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
   async execute(interaction) {
     const sub = interaction.options.getSubcommand();
     const guildId = interaction.guildId;
@@ -38,7 +49,9 @@ module.exports = {
     }
 
     if (sub === 'enable') {
-      if (!cfg.channelId) return interaction.reply({ content: 'Set a channel first with /welcome setchannel', ephemeral: true });
+      if (!cfg.channelId)
+        return interaction.reply({ content: 'Set a channel first with /welcome setchannel', ephemeral: true });
+
       cfg.enabled = true;
       await cfg.save();
       return interaction.reply({ content: 'Welcome messages enabled.', ephemeral: true });

@@ -1,49 +1,85 @@
+// events/interactionCreate.js
 const Ticket = require('../models/ticketModel');
-const { ActionRowBuilder, ButtonBuilder } = require('discord.js');
+const Backup = require('../models/backupModel');
+const { previewRestore, applyRestore } = require('../utils/backupRestore');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
 
 module.exports = {
   name: 'interactionCreate',
   async execute(interaction, client) {
     try {
-      if (interaction.isButton()) {
-        const id = interaction.customId;
+      // --- STRING SELECT MENU ---
+      if (interaction.isStringSelectMenu()) {
+        if (interaction.customId === 'backup_select') {
+          const id = interaction.values[0];
+          if (!/^[a-f0-9]{24}$/i.test(id)) {
+            return interaction.reply({ content: 'Invalid backup id selected.', flags: 64 });
+          }
+          const backup = await Backup.findById(id);
+          if (!backup) return interaction.reply({ content: 'Backup not found.', flags: 64 });
 
-        if (id === 'ticket_open') {
-          // emulate /ticket open
-          const guild = interaction.guild;
-          const name = `ticket-${interaction.user.username}`.toLowerCase().slice(0, 90);
-          const channel = await guild.channels.create({
-            name,
-            type: 0,
-            permissionOverwrites: [
-              { id: guild.roles.everyone.id, deny: ['ViewChannel'] },
-              { id: interaction.user.id, allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'] },
-            ]
-          });
-          const closeBtn = new ButtonBuilder().setCustomId('ticket_close').setLabel('🔒 Close Ticket').setStyle(4);
-          await channel.send({ content: `<@${interaction.user.id}> Ticket created. Staff will be with you shortly.`, components: [new ActionRowBuilder().addComponents(closeBtn)] });
+          const previewBtn = new ButtonBuilder().setCustomId(`backup_preview:${id}`).setLabel('Preview').setStyle(ButtonStyle.Secondary);
+          const loadBtn = new ButtonBuilder().setCustomId(`backup_load_confirm:${id}:all`).setLabel('Load (Dry-Run)').setStyle(ButtonStyle.Danger);
+          const deleteBtn = new ButtonBuilder().setCustomId(`backup_delete:${id}`).setLabel('Delete').setStyle(ButtonStyle.Secondary);
+          const row = new ActionRowBuilder().addComponents(previewBtn, loadBtn, deleteBtn);
 
-          const t = new Ticket({ guildId: guild.id, channelId: channel.id, userId: interaction.user.id });
-          await t.save();
-          return interaction.reply({ content: `Ticket created: ${channel}`, ephemeral: true });
-        }
+          const embed = new EmbedBuilder()
+            .setTitle('Backup selected')
+            .setDescription(`ID: \`\`\`${id}\`\`\``)
+            .addFields({ name: 'Created', value: backup.createdAt.toISOString() })
+            .setColor(0xbb2f34)
+            .setTimestamp();
 
-        if (id === 'ticket_close') {
-          const ticket = await Ticket.findOne({ channelId: interaction.channelId });
-          if (!ticket) return interaction.reply({ content: 'Not a ticket channel.', ephemeral: true });
-
-          ticket.status = 'closed';
-          ticket.closedAt = new Date();
-          await ticket.save();
-
-          // Change name and disable user view
-          await interaction.channel.setName(`closed-${interaction.channel.name}`).catch(()=>{});
-          await interaction.channel.permissionOverwrites.edit(ticket.userId, { ViewChannel: false }).catch(()=>{});
-          return interaction.reply({ content: 'Ticket closed.', ephemeral: true });
+          return interaction.reply({ embeds: [embed], components: [row], flags: 64 });
         }
       }
 
-      // existing slash command handling (if any)
+      // --- BUTTONS ---
+      if (interaction.isButton()) {
+        const [actionPart, id, extra] = interaction.customId.split(':'); // e.g. backup_preview:ID
+        if (actionPart === 'backup_preview') {
+          const backupId = id;
+          const backup = await Backup.findById(backupId);
+          if (!backup) return interaction.reply({ content: 'Backup not found.', flags: 64 });
+
+          const preview = await previewRestore(backup, 'all');
+          return interaction.reply({ content: `Preview:\n${preview.detail.join('\n')}`, flags: 64 });
+        }
+
+        if (actionPart === 'backup_load_confirm') {
+          const part = extra || 'all';
+          const backup = await Backup.findById(id);
+          if (!backup) return interaction.reply({ content: 'Backup not found.', flags: 64 });
+
+          // Preview first
+          const preview = await previewRestore(backup, part);
+          const confirmRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`backup_load_apply:${id}:${part}`).setLabel('Confirm Load (Apply)').setStyle(ButtonStyle.Danger),
+            new ButtonBuilder().setCustomId(`backup_load_cancel:${id}`).setLabel('Cancel').setStyle(ButtonStyle.Secondary)
+          );
+
+          return interaction.reply({ content: `Dry-run preview:\n${preview.detail.join('\n')}`, components: [confirmRow], flags: 64 });
+        }
+
+        if (actionPart === 'backup_load_apply') {
+          const part = extra || 'all';
+          const backup = await Backup.findById(id);
+          if (!backup) return interaction.reply({ content: 'Backup not found.', flags: 64 });
+
+          // apply restore carefully (role creation implemented minimally)
+          await interaction.deferReply({ flags: 64 });
+          const res = await applyRestore(backup, interaction.guild, part);
+          return interaction.editReply({ content: `Apply results:\n${(res.created||[]).join('\n') || 'No changes applied.'}` });
+        }
+
+        if (actionPart === 'backup_delete') {
+          const backupId = id;
+          await Backup.findByIdAndDelete(backupId);
+          return interaction.reply({ content: `Backup ${backupId} deleted.`, flags: 64 });
+        }
+      }
+
+      // --- existing slash command handler ---
       if (interaction.isChatInputCommand()) {
         const command = client.slashCommands.get(interaction.commandName);
         if (!command) return;
@@ -51,7 +87,7 @@ module.exports = {
       }
     } catch (err) {
       console.error('Interaction handler error:', err);
-      if (!interaction.replied) interaction.reply({ content: 'An error occurred.', ephemeral: true }).catch(()=>{});
+      if (!interaction.replied && !interaction.deferred) interaction.reply({ content: 'An error occurred.', flags: 64 }).catch(()=>{});
     }
   }
 };

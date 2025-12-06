@@ -12,14 +12,14 @@ const client = new Client({
   ]
 });
 
-// Collections
+// ----------------- Collections -----------------
 client.prefixCommands = new Collection();
 client.slashCommands = new Collection();
 
-// Connect MongoDB
+// ----------------- Connect MongoDB -----------------
 connectMongo();
 
-// Load events
+// ----------------- Load Events -----------------
 fs.readdirSync('./events')
   .filter(f => f.endsWith('.js'))
   .forEach(file => {
@@ -28,7 +28,7 @@ fs.readdirSync('./events')
     else client.on(event.name, (...args) => event.execute(...args, client));
   });
 
-// Load prefix commands
+// ----------------- Load Prefix Commands -----------------
 fs.readdirSync('./commands/prefix')
   .filter(f => f.endsWith('.js'))
   .forEach(file => {
@@ -36,5 +36,16 @@ fs.readdirSync('./commands/prefix')
     client.prefixCommands.set(command.name, command);
   });
 
-// Login and deploy slash commands
-client.login(process.env.TOKEN).then(() => deploySlash(client));
+// ----------------- Load Slash Commands -----------------
+fs.readdirSync('./commands/slash')
+  .filter(f => f.endsWith('.js'))
+  .forEach(file => {
+    const command = require(`./commands/slash/${file}`);
+    client.slashCommands.set(command.data.name, command);
+  });
+
+// ----------------- Login and Deploy Slash Commands -----------------
+client.login(process.env.TOKEN).then(() => {
+  console.log('Bot logged in.');
+  deploySlash(client);
+});
