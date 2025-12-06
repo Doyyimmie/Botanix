@@ -4,6 +4,7 @@ module.exports = {
     name: 'messageCreate',
     async execute(message, client) {
         if (message.author.bot) return;
+        if (!message.guild || !message.channel) return;
 
         // ---- Prefix commands ----
         const prefix = process.env.PREFIX;
@@ -13,10 +14,10 @@ module.exports = {
             const command = client.prefixCommands.get(commandName);
             if (command) {
                 try {
-                    await command.execute(message, args);
+                    await command.execute(message, args, client);
                 } catch (error) {
                     console.error(error);
-                    message.reply('There was an error executing that command!');
+                    message.reply('There was an error executing that command!').catch(()=>{});
                 }
             }
         }
@@ -26,13 +27,18 @@ module.exports = {
             const list = await AutoResponder.find({ guildId: message.guild.id });
             if (!list?.length) return;
 
+            const content = message.content.toLowerCase();
+
             for (const a of list) {
-                const content = message.content.toLowerCase();
-                if (a.type === 'contains' && content.includes(a.trigger.toLowerCase())) {
-                    return message.channel.send(a.response);
-                }
-                if (a.type === 'exact' && content.trim() === a.trigger.toLowerCase()) {
-                    return message.channel.send(a.response);
+                const trigger = (a.trigger || '').toLowerCase();
+                const response = a.response || '';
+
+                if (!response) continue; // evita ValidationError
+
+                if ((a.type === 'contains' && content.includes(trigger)) ||
+                    (a.type === 'exact' && content.trim() === trigger)) {
+                    message.channel.send(response).catch(console.error);
+                    break; // só envia uma resposta por mensagem
                 }
             }
         } catch (err) {

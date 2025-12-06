@@ -5,7 +5,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('afk')
     .setDescription('Set or remove AFK status')
-    .addSubcommand(sc => sc.setName('set').setDescription('Set AFK').addStringOption(o => o.setName('reason').setRequired(false)))
+    .addSubcommand(sc => sc.setName('set').setDescription('Set AFK').addStringOption(o => o.setName('reason').setDescription('AFK reason').setRequired(false)))
     .addSubcommand(sc => sc.setName('remove').setDescription('Remove AFK')),
   async execute(interaction) {
     const sub = interaction.options.getSubcommand();

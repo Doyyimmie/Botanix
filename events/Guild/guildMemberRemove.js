@@ -1,8 +1,10 @@
-const log = require('../../utils/logs');
-
 module.exports = {
     name: 'guildMemberRemove',
     execute(member, client) {
-        log(client, `User left: ${member.user.tag}`);
+        try {
+            log(client, member.guild, `User left: ${member.user.tag}`);
+        } catch (err) {
+            console.error('guildMemberRemove log error:', err);
+        }
     }
 };

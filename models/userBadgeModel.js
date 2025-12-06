@@ -7,4 +7,5 @@ const ubSchema = new mongoose.Schema({
   awardedAt: { type: Date, default: Date.now }
 });
 
-module.exports = mongoose.model('UserBadge', ubSchema);
+// Evita OverwriteModelError
+module.exports = mongoose.models.UserBadge || mongoose.model('UserBadge', ubSchema);

@@ -5,8 +5,11 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('autoresponder')
     .setDescription('Manage autoresponders')
-    .addSubcommand(sc => sc.setName('add').setDescription('Add an autoresponder').addStringOption(o => o.setName('trigger').setRequired(true)).addStringOption(o => o.setName('response').setRequired(true)).addStringOption(o => o.setName('type').addChoices({ name:'contains', value:'contains' }, { name:'exact', value:'exact' })))
-    .addSubcommand(sc => sc.setName('remove').setDescription('Remove by id').addStringOption(o => o.setName('id').setRequired(true)))
+    .addSubcommand(sc => sc.setName('add').setDescription('Add an autoresponder')
+      .addStringOption(o => o.setName('trigger').setDescription('Trigger text').setRequired(true))
+      .addStringOption(o => o.setName('response').setDescription('Response text').setRequired(true))
+      .addStringOption(o => o.setName('type').setDescription('Match type').addChoices({ name:'contains', value:'contains' }, { name:'exact', value:'exact' })))
+    .addSubcommand(sc => sc.setName('remove').setDescription('Remove by id').addStringOption(o => o.setName('id').setDescription('Autoresponder ID').setRequired(true)))
     .addSubcommand(sc => sc.setName('list').setDescription('List autoresponders'))
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
   async execute(interaction) {

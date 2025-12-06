@@ -18,8 +18,18 @@ module.exports = {
     .setDescription('Create/load backups of the server')
     .addSubcommand(sc => sc.setName('create').setDescription('Create a backup'))
     .addSubcommand(sc => sc.setName('info').setDescription('List backups for this guild'))
-    .addSubcommand(sc => sc.setName('load').setDescription('Load a backup (admin only)').addStringOption(o => o.setName('id').setDescription('Backup ID').setRequired(true)).addStringOption(o => o.setName('part').setDescription('Which part to restore (roles|channels|permissions|all)').setRequired(false)))
-    .addSubcommand(sc => sc.setName('auto').setDescription('Auto backup controls').addStringOption(o => o.setName('action').setDescription('enable|disable').setRequired(true)).addStringOption(o => o.setName('interval').setDescription('interval in hours when enabling').setRequired(false)))
+    .addSubcommand(sc =>
+      sc.setName('load')
+        .setDescription('Load a backup (admin only)')
+        .addStringOption(o => o.setName('id').setDescription('Backup ID').setRequired(true))
+        .addStringOption(o => o.setName('part').setDescription('Which part to restore (roles|channels|permissions|all)').setRequired(false))
+    )
+    .addSubcommand(sc =>
+      sc.setName('auto')
+        .setDescription('Auto backup controls')
+        .addStringOption(o => o.setName('action').setDescription('enable|disable').setRequired(true))
+        .addStringOption(o => o.setName('interval').setDescription('interval in hours when enabling').setRequired(false))
+    )
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async execute(interaction) {
@@ -29,7 +39,6 @@ module.exports = {
     // --- CREATE ---
     if (sub === 'create') {
       await interaction.deferReply({ flags: 64 });
-
       const snapshot = await serializeGuild(guild);
 
       const backup = new Backup({
@@ -37,8 +46,10 @@ module.exports = {
         data: snapshot,
         authorId: interaction.user.id
       });
-
       await backup.save();
+
+      const rolesLength = snapshot.roles?.length || 0;
+      const channelsLength = snapshot.channels?.length || 0;
 
       const embed = new EmbedBuilder()
         .setTitle('Backup created')
@@ -46,7 +57,7 @@ module.exports = {
         .addFields(
           { name: 'ID', value: `\`\`\`${backup._id.toString()}\`\`\`` },
           { name: 'Author', value: `<@${interaction.user.id}>` },
-          { name: 'Items', value: `Roles: ${snapshot.roles.length}, Channels: ${snapshot.channels.length}` }
+          { name: 'Items', value: `Roles: ${rolesLength}, Channels: ${channelsLength}` }
         )
         .setTimestamp();
 
@@ -64,19 +75,18 @@ module.exports = {
         .addOptions(
           list.map(b => ({
             label: `Backup ${b._id.toString().slice(0, 6)}`,
-            description: `Created: ${b.createdAt.toISOString().slice(0,19)}`,
+            description: `Created: ${b.createdAt?.toISOString()?.slice(0,19) || 'Unknown'}`,
             value: b._id.toString()
           }))
         );
 
       const row = new ActionRowBuilder().addComponents(menu);
-
-      const text = list.map(b => `• **${b._id}** — ${b.createdAt.toISOString()} (by ${b.authorId})`).join('\n');
+      const text = list.map(b => `• **${b._id}** — ${b.createdAt?.toISOString() || 'Unknown'} (by ${b.authorId || 'Unknown'})`).join('\n');
 
       return interaction.reply({ content: `Backups found:\n${text}`, components: [row], flags: 64 });
     }
 
-    // --- LOAD (direct via option) ---
+    // --- LOAD ---
     if (sub === 'load') {
       const id = interaction.options.getString('id');
       const part = interaction.options.getString('part') || 'all';
@@ -86,11 +96,12 @@ module.exports = {
       const backup = await Backup.findById(id);
       if (!backup) return interaction.reply({ content: 'Backup not found.', flags: 64 });
 
-      // Build confirmation buttons
+      const rolesLength = backup.data?.roles?.length || 0;
+      const channelsLength = backup.data?.channels?.length || 0;
+
       const previewBtn = new ButtonBuilder().setCustomId(`backup_preview:${id}`).setLabel('Preview').setStyle(ButtonStyle.Secondary);
       const loadBtn = new ButtonBuilder().setCustomId(`backup_load_confirm:${id}:${part}`).setLabel('Load (Dry-Run)').setStyle(ButtonStyle.Danger);
       const deleteBtn = new ButtonBuilder().setCustomId(`backup_delete:${id}`).setLabel('Delete').setStyle(ButtonStyle.Secondary);
-
       const row = new ActionRowBuilder().addComponents(previewBtn, loadBtn, deleteBtn);
 
       const embed = new EmbedBuilder()
@@ -98,29 +109,39 @@ module.exports = {
         .setColor(0xbb2f34)
         .addFields(
           { name: 'ID', value: `\`\`\`${id}\`\`\`` },
-          { name: 'Author', value: `\`${backup.authorId}\`` },
-          { name: 'Created', value: backup.createdAt.toISOString() },
-          { name: 'Parts', value: `roles: ${backup.data.roles?.length || 0}, channels: ${backup.data.channels?.length || 0}` }
+          { name: 'Author', value: `\`${backup.authorId || 'Unknown'}\`` },
+          { name: 'Created', value: backup.createdAt?.toISOString() || 'Unknown' },
+          { name: 'Parts', value: `roles: ${rolesLength}, channels: ${channelsLength}` }
         )
         .setTimestamp();
 
       return interaction.reply({ embeds: [embed], components: [row], flags: 64 });
     }
 
-    // --- AUTO (enable/disable) ---
+    // --- AUTO ---
     if (sub === 'auto') {
       const action = interaction.options.getString('action');
       const intervalStr = interaction.options.getString('interval') || null;
 
       if (action === 'enable') {
-        const hours = Math.max(1, Math.min(168, parseFloat(intervalStr || '24'))); // 1h..168h
-        // save config
+        const hours = Math.max(1, Math.min(168, parseFloat(intervalStr || '24')));
         const ms = hours * 60 * 60 * 1000;
-        await AutoBackup.findOneAndUpdate({ guildId: guild.id }, { enabled: true, intervalMs: ms, lastRun: new Date() }, { upsert: true, new: true });
-        require('../../utils/backupScheduler').scheduleGuild(guild.id); // reload scheduler
+
+        await AutoBackup.findOneAndUpdate(
+          { guildId: guild.id },
+          { enabled: true, intervalMs: ms, lastRun: new Date() },
+          { upsert: true, new: true }
+        );
+
+        require('../../utils/backupScheduler').scheduleGuild(guild.id);
         return interaction.reply({ content: `Auto-backup enabled every ${hours} hour(s).`, flags: 64 });
       } else {
-        await AutoBackup.findOneAndUpdate({ guildId: guild.id }, { enabled: false }, { upsert: true, new: true });
+        await AutoBackup.findOneAndUpdate(
+          { guildId: guild.id },
+          { enabled: false },
+          { upsert: true, new: true }
+        );
+
         require('../../utils/backupScheduler').cancelGuild(guild.id);
         return interaction.reply({ content: 'Auto-backup disabled.', flags: 64 });
       }
